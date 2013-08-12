@@ -23,6 +23,7 @@ References:
 
 var fs = require('fs');
 var program = require('commander');
+var rest = require('restler');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
@@ -30,8 +31,8 @@ var CHECKSFILE_DEFAULT = "checks.json";
 var assertFileExists = function(infile) {
     var instr = infile.toString();
     if(!fs.existsSync(instr)) {
-        console.log("%s does not exist. Exiting.", instr);
-        process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
+	console.log("%s does not exist. Exiting.", instr);
+	process.exit(1); // http://nodejs.org/api/process.html#process_process_exit_code
     }
     return instr;
 };
@@ -49,8 +50,9 @@ var checkHtmlFile = function(htmlfile, checksfile) {
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
-        var present = $(checks[ii]).length > 0;
-        out[checks[ii]] = present;
+	var present = $(checks[ii]).length > 0;
+
+	out[checks[ii]] = present;
     }
     return out;
 };
@@ -61,14 +63,41 @@ var clone = function(fn) {
     return fn.bind({});
 };
 
+var buildfn = function(localfile, checkfile) {
+    var response2file = function(result, response) {
+        if (result instanceof Error) {
+            console.error('Error: ' + util.format(response.message));
+        } else {
+            console.error("Wrote %s", localfile);
+            fs.writeFileSync(localfile, result);
+            var checkJson = checkHtmlFile(localfile, checkfile);
+            var outJson = JSON.stringify(checkJson, null, 4);
+            console.log(outJson);
+
+        }
+    };
+    return response2file;
+};
+
 if(require.main == module) {
     program
-        .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
-        .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
-        .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+	.option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
+	.option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
+	.option('-u --url <url_location>', 'URL of the page to be graded')
+	.parse(process.argv);
+    
+    console.log("%s is the url", program.url);    
+    if (program.url) {
+	var localfile = "abc.html";
+	var response2file = buildfn(localfile, program.checks);    
+	rest.get(program.url).on('complete', response2file);
+	program.file = localfile;
+
+    } else {
+       var checkJson = checkHtmlFile(program.file, program.checks);
+       var outJson = JSON.stringify(checkJson, null, 4);
+       console.log(outJson);
+    }	
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
